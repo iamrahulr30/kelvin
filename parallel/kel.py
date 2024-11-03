@@ -3,7 +3,10 @@ import ray
 import os
 import numpy as np
 
-#u = (1 / (4 * np.pi * mu)) * ((3 * alpha / (r_norm ** 3)) - (alpha / (r_norm ** 3))) * F
+# Your Kelvinlet Displacement Formula
+
+# h_r = (1 / (4 * np.pi * mu)) * F * ((np.linalg.norm(r) + epsilon) ** alpha - (np.linalg.norm(r) ** 2 + epsilon ** 2) ** (3 / 2) * alpha)
+
 
 ray.init(num_cpus=4)
 
@@ -17,24 +20,25 @@ images = [
     cv2.resize(cv2.imread(os.path.join(frames_folder, file)), (512, 512)) for file in frame_files
 ]
 
-
-
 # Update total_iterations based on start_frame and end_frame
 total_iterations = end_frame - start_frame  # Total frames being processed
 midpoint = total_iterations // 2  # Calculate midpoint
 
 initial_y = 255
-final_y = 210
-initial_power = 1000
-max_power = 4000
+final_y = 220
+initial_power = 1500
+max_power = 10_000
 
 mu = 1.0 #lower mu -> inc distortion | higher -> dec in distortion
 alpha = -2 #lower -> more repulsive , smooth , spread | higher -> contraction , more pressure on the point 
 epsilon = 1e-5  # Avoid division by zero
 
+# Original Kelvinlet displacement function
 def kelvinlet_displacement(r, F):
     r_norm = np.linalg.norm(r, axis=-1, keepdims=True) + epsilon
-    u = (1 / (4 * np.pi * mu)) * ((3 * alpha / r_norm) - (alpha / (r_norm ** 3))) * F
+    u = (1 / (4 * np.pi * mu)) * ( 
+        (alpha / r_norm) - (alpha / (r_norm ** 2 + epsilon ** 2) ** (3/2))
+    ) * F
     return np.nan_to_num(u)  # Replace NaN with 0
 
 @ray.remote
@@ -81,19 +85,17 @@ def save_image(image, filename):
     cv2.imwrite(filename, image)
     print(f"Saved {filename}")
 
-
 # Pre-compute power values
 power_values = np.zeros(total_iterations)
 power_values[:midpoint] = np.linspace(initial_power, max_power, midpoint)
 power_values[midpoint:] = np.linspace(max_power, 0, total_iterations - midpoint)
 
-
 # Pre-compute y_position values
 y_positions = np.linspace(initial_y, final_y, total_iterations)
 
-track = [ ( no , pow_ , y_val ) for no ,pow_ ,y_val in zip(list(range(start_frame , end_frame)) , power_values , y_positions )]
+track = [(no, pow_, y_val) for no, pow_, y_val in zip(range(start_frame, end_frame), power_values, y_positions)]
 
-print("track" , track)
+print("track", track)
 # Create Ray tasks for processing frames
 tasks = [
     process_frame.remote(images[i], start_frame + i, power_values[i], y_positions[i])
@@ -114,7 +116,7 @@ save_tasks = [
 # Wait for all save tasks to complete
 ray.get(save_tasks)
 
-with open("dis.txt" , 'a') as f:
+with open("dis.txt", 'a') as f:
     f.write(f"{track}\n")
 
 ray.shutdown()

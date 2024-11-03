@@ -26,5 +26,5 @@ def extract_frames(video_path, output_folder="../data/frames_main", target_size=
     print("All frames have been extracted and saved.")
 
 # Specify the video path
-video_path = '../data/videos/portal.mp4'
+video_path = '../data/videos/glass2.mp4'
 extract_frames(video_path)
