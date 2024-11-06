@@ -1,8 +1,8 @@
 import cv2
 import os
 
-frames_folder = '../parallel/outframes'  
-output_video_path = '../output/videos/glass_dis1.avi'  
+frames_folder = '../parallel/inv_imgs'  
+output_video_path = '../output/videos/glass_inv__.avi'  
 fps = 30  
 
 frame_files = os.listdir(frames_folder)

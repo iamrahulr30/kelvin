@@ -1,7 +1,7 @@
 import cv2
 import os
 
-def extract_frames(video_path, output_folder="../data/frames_main", target_size=(512, 512)):
+def extract_frames(video_path, output_folder="../parallel/outframes", target_size=(512, 512)):
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 

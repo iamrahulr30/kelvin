@@ -3,96 +3,71 @@ import os
 import numpy as np
 import ray
 
-# Initialize Ray
-ray.init()
+ray.init(num_cpus=4)
 
 # Paths
 output_folder = 'outframes/'
-os.makedirs(output_folder, exist_ok=True)
 recovered_folder = 'inv_imgs/'
 os.makedirs(recovered_folder, exist_ok=True)
 
 # Kelvinlet parameters
-mu = .5
-alpha = -.4
-epsilon = 1
+mu = 0.5
+alpha = -0.4
+epsilon = 1e-6  # Small value to avoid divide-by-zero errors
 
-# Function to calculate Kelvinlet displacement
 def kelvinlet_displacement(r, F):
-    r_norm = np.linalg.norm(r) + epsilon
-    u = (1 / (4 * np.pi * mu)) * ((3 * alpha / r_norm) - (alpha / (r_norm ** 3))) * F
+    r_norm = np.linalg.norm(r, axis=1) + epsilon  
+    u = (1 / (4 * np.pi * mu)) * ((3 * alpha / r_norm) - (alpha / r_norm**3)).reshape(-1, 1) * F
     return u
 
-# Remote function to process frames
-@ray.remote
-def process_frame(deformed_image, frame_no, power, y_position):
+def kelvinlet_inversion(deformed_image, forces):
     height, width, _ = deformed_image.shape
-    forces = [{'power': power, 'position': np.array([260.0, y_position])}]
-    recovered_image = np.zeros_like(deformed_image)
+    y_indices, x_indices = np.meshgrid(np.arange(height), np.arange(width), indexing='ij')
+    coords = np.stack((x_indices, y_indices), axis=-1).reshape(-1, 2)
 
-    for y in range(height):
-        for x in range(width):
-            displacement = np.zeros(2)
-            for force in forces:
-                r = np.array([x, y]) - force['position']  # Relative position vector
-                u = kelvinlet_displacement(r, force['power'])  # Displacement
-                displacement += u  # Accumulate displacement
+    displacement = np.zeros(coords.shape)
+    for force in forces:
+        r = coords - force['position']
+        displacement += kelvinlet_displacement(r, force['power'])
 
-            # Set up the A matrix
-            A = np.eye(2)  # 2D identity matrix
-            b = np.array([x, y]) - displacement  # Reverse the displacement
-            original_coords = np.linalg.solve(A, b)
-            orig_x, orig_y = np.clip(original_coords, [0, 0], [width - 1, height - 1]).astype(int)
+    A = np.eye(2)
+    A_inv = np.linalg.inv(A)  
+    original_coords = (A_inv @ (coords - displacement).T).T  
 
-            recovered_image[y, x] = deformed_image[orig_y, orig_x]
+    original_coords = np.clip(original_coords, [0, 0], [width - 1, height - 1]).astype(int)
+    recovered_image = deformed_image[original_coords[:, 1], original_coords[:, 0]].reshape(height, width, -1)
 
     return recovered_image
 
-# Remote function to save images
 @ray.remote
-def save_image(image, filename):
-    cv2.imwrite(filename, image)
+def process_frame(frame_no, power, y_position, deformed_image):
+    forces = [{'power': power, 'position': np.array([260.0, y_position])}]
+    recovered_image = kelvinlet_inversion(deformed_image, forces)
 
-# Remote function to read images
-@ray.remote
-def read_image(filename):
-    image = cv2.imread(filename)
-    if image is None:
-        print(f"Warning: {filename} could not be found or opened.")
-    return image
+    recovered_filename = os.path.join(recovered_folder, f"frame_{frame_no:04}.png")
+    cv2.imwrite(recovered_filename, recovered_image)
+    return recovered_filename
 
-# Load the displacement values from file
+
 with open('dis.txt', 'r') as file:
-    line = file.readline().strip()
-    displacements = eval(line)  # List of (frame_no, power, y_position)
+    displacements = eval(file.readline().strip()) 
 
-print(displacements)
-# Read images in parallel and retrieve results
-read_tasks = [
-    read_image.remote(f"{output_folder}/frame_{frame_no + 1:04}.png") 
+all_frames = {
+    frame_no: cv2.imread(f"{output_folder}/frame_{frame_no:04}.png")
     for frame_no, _, _ in displacements
-]
-read_results = ray.get(read_tasks)
+}
 
-# Process frames in parallel
-process_tasks = [
-    process_frame.remote(deformed_image, frame_no + 1, power, y_position)
-    for (frame_no, power, y_position), deformed_image in zip(displacements, read_results)
-    if deformed_image is not None
-]
+all_frames = {k: v for k, v in all_frames.items() if v is not None}
 
-# Retrieve processed images
-processed_results = ray.get(process_tasks)
-
-# Save processed images in parallel with correct frame numbers
-save_tasks = [
-    save_image.remote(processed_image, os.path.join(recovered_folder, f"frame_{frame_no + 1:04}.jpg"))
-    for (frame_no, _, _), processed_image in zip(displacements, processed_results)
-    if processed_image is not None
+tasks = [
+    process_frame.remote(frame_no, power, y_position, all_frames[frame_no])
+    for frame_no, power, y_position in displacements if frame_no in all_frames
 ]
 
-# Wait for all save tasks to complete
-ray.get(save_tasks)
+results = ray.get(tasks)
+
+for result in results:
+    print(f"Recovered and saved {result}")
 
 # Shutdown Ray
 ray.shutdown()

@@ -11,19 +11,16 @@ output_folder = '../parallel/outframes/'
 recovered_folder = '../parallel/inv_imgs/'
 os.makedirs(recovered_folder, exist_ok=True)
 
-# Kelvinlet parameters
 mu = 0.5
 alpha = -0.4
 epsilon = 1
 
-# Function to calculate Kelvinlet displacement
 def kelvinlet_displacement(r, F):
     r_norm = np.linalg.norm(r) + epsilon
     u = (1 / (4 * np.pi * mu)) * ((3 * alpha / r_norm) - (alpha / (r_norm ** 3))) * F
     return u
 
-# Function to reverse displacement on an image
-def reverse_displacement(deformed_image, forces):
+def kelvinlet_inversion(deformed_image, forces):
     height, width, _ = deformed_image.shape
     recovered_image = np.zeros_like(deformed_image)
 
@@ -48,18 +45,16 @@ def reverse_displacement(deformed_image, forces):
 def process_frame(frame_no, power, y_position, deformed_image):
     print(frame_no)
     forces = [{'power': power, 'position': np.array([260.0, y_position])}]
-    recovered_image = reverse_displacement(deformed_image, forces)
+    recovered_image = kelvinlet_inversion(deformed_image, forces)
 
     recovered_filename = os.path.join(recovered_folder, f"inv_frame_{frame_no:04}.jpg")
     cv2.imwrite(recovered_filename, recovered_image)
     return recovered_filename
 
-# Load the displacement values from file
 with open('../parallel/dis.txt', 'r') as file:
     line = file.readline().strip()
     displacements = eval(line)  # List of (frame_no, power, y_position)
 
-# Preload all frames into a dictionary with frame_no as the key
 all_frames = {}
 for frame_no, _, _ in displacements:
     filename = f"{output_folder}/frame_{frame_no:04}.png"
@@ -69,7 +64,6 @@ for frame_no, _, _ in displacements:
     else:
         all_frames[frame_no] = deformed_image
 
-# Prepare and execute tasks in parallel
 tasks = [
     process_frame.remote(frame_no, power, y_position, all_frames[frame_no])
     for frame_no, power, y_position in displacements if frame_no in all_frames

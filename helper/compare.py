@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 # Paths to your video files
-video_path1 = '../output/videos/glass_dis.avi'  # First video path
-video_path2 = '../output/videos/glass_dis1.avi'  # Second video path
+video_path1 = '../output/videos/glass_dis__.avi'  # First video path
+video_path2 = '../output/videos/glass_inv__.avi'  # Second video path
 
 # Open video files
 cap1 = cv2.VideoCapture(video_path1)
